@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bingo Game</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+body {
+  background:#0f172a;
+  color:#fff;
+  font-family:Arial;
+  margin:0;
+  text-align:center;
+}
+button {
+  background:#22c55e;
+  border:none;
+  padding:12px 20px;
+  border-radius:10px;
+  font-size:15px;
+  margin:6px;
+}
+.panel {
+  background:#1e293b;
+  margin:10px;
+  padding:12px;
+  border-radius:12px;
+}
+.card-grid {
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:8px;
+  margin:15px;
+}
+.card {
+  background:#1e293b;
+  padding:15px;
+  border-radius:10px;
+  cursor:pointer;
+}
+.card.selected {
+  background:#22c55e;
+  color:#000;
+}
+input {
+  padding:8px;
+  border-radius:8px;
+  border:none;
+  width:70%;
+}
+</style>
+</head>
+
+<body>
+
+<h2>🎱 Bingo</h2>
+<div id="balance">Balance: -- Birr</div>
+
+<div class="panel">
+  <button onclick="deposit()">➕ Deposit</button>
+  <button onclick="withdraw()">➖ Withdraw</button>
+</div>
+
+<h3>Select Card</h3>
+<div id="cards" class="card-grid"></div>
+
+<button onclick="joinGame()">🎯 Join Game (10 Birr)</button>
+
+<h3 id="status"></h3>
+
+<audio id="winSound">
+  <source src="https://assets.mixkit.co/sfx/preview/mixkit-winning-notification-2018.mp3">
+</audio>
+
+<script>
+/* ======================
+   CONFIG
+====================== */
+const BACKEND_URL = "https://YOUR-BACKEND.up.railway.app";
+const STAKE = 10;
+
+/* ======================
+   TELEGRAM AUTH
+====================== */
+const tg = window.Telegram.WebApp;
+tg.expand();
+
+const user = tg.initDataUnsafe?.user;
+if (!user) {
+  alert("Please open inside Telegram");
+}
+
+const uid = user.id;
+
+/* ======================
+   API HELPER
+====================== */
+async function api(path, data = {}) {
+  const r = await fetch(BACKEND_URL + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uid, ...data })
+  });
+  const j = await r.json();
+  if (!r.ok) throw j.error || "Error";
+  return j;
+}
+
+/* ======================
+   INIT USER
+====================== */
+async function init() {
+  await api("/auth");
+  refreshBalance();
+}
+init();
+
+/* ======================
+   BALANCE
+====================== */
+async function refreshBalance() {
+  const r = await fetch(BACKEND_URL + "/wallet?uid=" + uid);
+  const j = await r.json();
+  document.getElementById("balance").innerText =
+    "Balance: " + j.balance + " Birr";
+}
+
+/* ======================
+   CARDS (1–25)
+====================== */
+let selectedCard = null;
+const cardsDiv = document.getElementById("cards");
+
+for (let i = 1; i <= 25; i++) {
+  const d = document.createElement("div");
+  d.className = "card";
+  d.innerText = i;
+  d.onclick = () => {
+    document.querySelectorAll(".card")
+      .forEach(c => c.classList.remove("selected"));
+    d.classList.add("selected");
+    selectedCard = i;
+  };
+  cardsDiv.appendChild(d);
+}
+
+/* ======================
+   JOIN GAME
+====================== */
+async function joinGame() {
+  if (!selectedCard) return alert("Select a card");
+
+  try {
+    await api("/game/join", { card: selectedCard });
+    document.getElementById("status").innerText =
+      "⏳ Waiting for draw...";
+    refreshBalance();
+  } catch (e) {
+    alert(e);
+  }
+}
+
+/* ======================
+   DEPOSIT (Telegram Payment)
+====================== */
+function deposit() {
+  tg.openTelegramLink(
+    "https://t.me/YOUR_BOT_USERNAME"
+  );
+}
+
+/* ======================
+   WITHDRAW
+====================== */
+async function withdraw() {
+  const amount = prompt("Withdraw amount:");
+  const phone = prompt("Telebirr phone:");
+  if (!amount || !phone) return;
+
+  try {
+    await api("/wallet/withdraw", {
+      amount: Number(amount),
+      phone
+    });
+    alert("Withdraw request sent");
+  } catch (e) {
+    alert(e);
+  }
+}
+
+/* ======================
+   WIN LISTENER
+====================== */
+setInterval(async () => {
+  const r = await fetch(
+    BACKEND_URL + "/game/lastwin?uid=" + uid
+  );
+  const j = await r.json();
+  if (j.win) {
+    document.getElementById("status").innerText =
+      "🎉 YOU WON " + j.amount + " Birr!";
+    document.getElementById("winSound").play();
+    refreshBalance();
+  }
+}, 3000);
+</script>
+
+</body>
+</html>
